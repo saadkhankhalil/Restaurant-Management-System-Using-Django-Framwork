@@ -57,6 +57,9 @@ urlpatterns = [
     # Pending Sale URLs
     path('pending-sales/', pending_sales, name='pending_sales'),
     path('mark-paid/<int:id>/', mark_as_paid, name='mark_as_paid'),
+    path('pending-sales/complete/<int:id>/', finalize_pending_sale, name='finalize_pending_sale'),
+    path('pending-sales/delete/<int:id>/', delete_pending_sale, name='delete_pending_sale'),
+
 
 
 

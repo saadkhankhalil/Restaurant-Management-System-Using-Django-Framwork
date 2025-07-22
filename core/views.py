@@ -9,11 +9,10 @@ from django.core.paginator import Paginator
 from django.db.models import Count, Sum
 from django.utils.timezone import now, timedelta
 from django.shortcuts import render
-from .models import Category, Product, Sale
+from .models import Category, Product, Sale,PendingSale, PendingSaleDetail
 from datetime import datetime
 from django.shortcuts import get_object_or_404
 from django.db import connection
-from django.db.models import Q
 
 # Create your views here.
 def adminHome(request):
@@ -163,53 +162,109 @@ import json  # Replace eval for safety
 
 from decimal import Decimal  # Add this import at the top
 
+
 def checkout_view(request):
-    if request.method == 'POST':
-        customer = request.POST.get('customer_name')
-        phone = request.POST.get('phone_no')
-        discount = request.POST.get('discount') or 0
-        service = request.POST.get('service_charges') or 0
-        amount = request.POST.get('amount') or 0
-        received = request.POST.get('received') or 0
-        payment = request.POST.get('payment_method')
-        items = request.POST.get('items')
+    session_cart = request.session.get('cart', [])
+    cart_total = Decimal("0.00")
 
-        # Convert string to decimal
-        discount = float(discount)
-        service = float(service)
-        amount = float(amount)
+    for item in session_cart:
+        try:
+            product = Product.objects.get(id=item["product_id"])
+            cart_total += product.price * Decimal(item["qty"])
+        except Product.DoesNotExist:
+            continue
 
-        if 'pending' in request.POST:
+    if request.method == "POST":
+        name = request.POST.get("customer_name", "Anonymous")
+        phone = request.POST.get("phone_no", "")
+        discount = Decimal(request.POST.get("discount") or 0)
+        service_charges = Decimal(request.POST.get("service_charges") or 0)
+        received = Decimal(request.POST.get("received") or 0)
+        payment_method = request.POST.get("payment_method", "Cash")
+
+        items = []
+        amount = Decimal("0.00")
+
+        for item in session_cart:
+            try:
+                product = Product.objects.get(id=item["product_id"])
+                quantity = item["qty"]
+                price = product.price
+                total = price * Decimal(quantity)
+                items.append({
+                    "product_name": product.name,
+                    "quantity": quantity,
+                    "price": price,
+                    "amount": total,
+                })
+                amount += total
+            except Product.DoesNotExist:
+                continue
+
+        discounted_amount = amount - (amount * discount / Decimal("100"))
+        final_amount = discounted_amount + service_charges
+        change = received - final_amount
+
+        if "pending" in request.POST:
+            # Save to pending tables
             pending = PendingSale.objects.create(
-                customer_name=customer,
+                customer_name=name,
                 phone_no=phone,
-                amount=amount,
-                tax=0,  # If tax logic exists, add it here
+                amount=final_amount,
+                tax=0,  # update if you have tax logic
                 discount=discount,
-                service_charges=service,
-                payment_method=payment
+                service_charges=service_charges,
+                payment_method=payment_method,
             )
 
-            if items:
-                items_data = json.loads(items)
-                for i, item in enumerate(items_data, start=1):
-                    PendingSaleDetail.objects.create(
-                        pending_sale=pending,
-                        sr_no=i,
-                        p_name=item['name'],
-                        p_qty=item['qty'],
-                        p_price=item['price'],
-                        p_amount=item['qty'] * item['price']
-                    )
+            for idx, item in enumerate(items, start=1):
+                PendingSaleDetail.objects.create(
+                    pending_sale=pending,
+                    sr_no=idx,
+                    p_name=item["product_name"],
+                    p_qty=item["quantity"],
+                    p_price=item["price"],
+                    p_amount=item["amount"],
+                )
 
-            messages.success(request, "Order saved as pending.")
-            return redirect('pending_sales')  # Make sure this URL is set
+            request.session['cart'] = []
+            return redirect('pending_sales')  # make sure you have a route for this
 
-        # You can handle the normal "checkout" flow here...
+        # Normal sale process
+        sale = Sale.objects.create(
+            customer_name=name,
+            phone_no=phone,
+            amount=final_amount,
+            received=received,
+            change=change,
+            discount=discount,
+            service_charges=service_charges,
+            payment_method=payment_method,
+        )
 
-    # Default response
-    return render(request, 'checkout.html', {'cart_total': 0})  # replace 0 with real total if needed
+        for idx, item in enumerate(items, start=1):
+            SaleDetail.objects.create(
+                sale=sale,
+                sr_no=idx,
+                product_name=item["product_name"],
+                quantity=item["quantity"],
+                price=item["price"],
+                amount=item["amount"],
+            )
 
+        request.session['cart'] = []
+
+        pdf = render_to_pdf("receipt.html", {"sale": sale})
+        if pdf:
+            response = HttpResponse(pdf, content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="receipt_{sale.id}.pdf"'
+            return response
+
+        return HttpResponse("PDF generation failed")
+
+    return render(request, "checkout.html", {
+        "cart_total": cart_total
+    })
 def show_receipt(request, sale_id):
     from .models import Sale
     try:
@@ -345,8 +400,6 @@ def delete_transaction(request, id):
     transaction.delete()
     return redirect('check_transaction')
 
-# Pending Sales
-
 def pending_sales(request):
     query = request.GET.get('q', '')
     if query:
@@ -387,3 +440,9 @@ def mark_as_paid(request, id):
 
     messages.success(request, f'Transaction {sale.id} marked as paid.')
     return redirect('pending_sales')
+
+def pending_sales_view(request):
+    pending_sales = PendingSale.objects.all().order_by('-date')
+    return render(request, 'pending_sales.html', {'pending_sales': pending_sales})
+
+
