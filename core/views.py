@@ -164,82 +164,51 @@ import json  # Replace eval for safety
 from decimal import Decimal  # Add this import at the top
 
 def checkout_view(request):
-    session_cart = request.session.get('cart', [])
-    cart_total = Decimal("0.00")
+    if request.method == 'POST':
+        customer = request.POST.get('customer_name')
+        phone = request.POST.get('phone_no')
+        discount = request.POST.get('discount') or 0
+        service = request.POST.get('service_charges') or 0
+        amount = request.POST.get('amount') or 0
+        received = request.POST.get('received') or 0
+        payment = request.POST.get('payment_method')
+        items = request.POST.get('items')
 
-    for item in session_cart:
-        try:
-            product = Product.objects.get(id=item["product_id"])
-            cart_total += product.price * Decimal(item["qty"])
-        except Product.DoesNotExist:
-            continue
+        # Convert string to decimal
+        discount = float(discount)
+        service = float(service)
+        amount = float(amount)
 
-    if request.method == "POST":
-        name = request.POST.get("customer_name", "Anonymous")
-        phone = request.POST.get("phone_no", "")
-        discount = Decimal(request.POST.get("discount") or 0)
-        service_charges = Decimal(request.POST.get("service_charges") or 0)
-        received = Decimal(request.POST.get("received") or 0)
-        payment_method = request.POST.get("payment_method", "Cash")
-
-        items = []
-        amount = Decimal("0.00")
-
-        for item in session_cart:
-            try:
-                product = Product.objects.get(id=item["product_id"])
-                quantity = item["qty"]
-                price = product.price
-                total = price * Decimal(quantity)
-                items.append({
-                    "product_name": product.name,
-                    "quantity": quantity,
-                    "price": price,
-                    "amount": total,
-                })
-                amount += total
-            except Product.DoesNotExist:
-                continue
-
-        discounted_amount = amount - (amount * discount / Decimal("100"))
-        final_amount = discounted_amount + service_charges
-        change = received - final_amount
-
-        sale = Sale.objects.create(
-            customer_name=name,
-            phone_no=phone,
-            amount=final_amount,
-            received=received,
-            change=change,
-            discount=discount,
-            service_charges=service_charges,
-            payment_method=payment_method,
-        )
-
-        for idx, item in enumerate(items, start=1):
-            SaleDetail.objects.create(
-                sale=sale,
-                sr_no=idx,
-                product_name=item["product_name"],
-                quantity=item["quantity"],
-                price=item["price"],
-                amount=item["amount"],
+        if 'pending' in request.POST:
+            pending = PendingSale.objects.create(
+                customer_name=customer,
+                phone_no=phone,
+                amount=amount,
+                tax=0,  # If tax logic exists, add it here
+                discount=discount,
+                service_charges=service,
+                payment_method=payment
             )
 
-        request.session['cart'] = []
+            if items:
+                items_data = json.loads(items)
+                for i, item in enumerate(items_data, start=1):
+                    PendingSaleDetail.objects.create(
+                        pending_sale=pending,
+                        sr_no=i,
+                        p_name=item['name'],
+                        p_qty=item['qty'],
+                        p_price=item['price'],
+                        p_amount=item['qty'] * item['price']
+                    )
 
-        pdf = render_to_pdf("receipt.html", {"sale": sale})
-        if pdf:
-            response = HttpResponse(pdf, content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="receipt_{sale.id}.pdf"'
-            return response
+            messages.success(request, "Order saved as pending.")
+            return redirect('pending_sales')  # Make sure this URL is set
 
-        return HttpResponse("PDF generation failed")
+        # You can handle the normal "checkout" flow here...
 
-    # GET request (initial load)
-    return render(request, "checkout.html", {
-        "cart_total": cart_total
-    })
+    # Default response
+    return render(request, 'checkout.html', {'cart_total': 0})  # replace 0 with real total if needed
 
 def show_receipt(request, sale_id):
     from .models import Sale
@@ -375,3 +344,46 @@ def delete_transaction(request, id):
     transaction = get_object_or_404(Sale, id=id)
     transaction.delete()
     return redirect('check_transaction')
+
+# Pending Sales
+
+def pending_sales(request):
+    query = request.GET.get('q', '')
+    if query:
+        sales = PendingSale.objects.filter(customer_name__icontains=query) | PendingSale.objects.filter(phone_no__icontains=query)
+    else:
+        sales = PendingSale.objects.all().order_by('-date')
+    return render(request, 'pending_sales.html', {'sales': sales})
+
+
+def mark_as_paid(request, id):
+    pending = get_object_or_404(PendingSale, id=id)
+    details = pending.details.all()
+
+    # Create a new Sale
+    sale = Sale.objects.create(
+        customer_name=pending.customer_name,
+        phone_no=pending.phone_no,
+        amount=pending.amount,
+        received=pending.amount,
+        change=0,
+        discount=pending.discount,
+        service_charges=pending.service_charges,
+        payment_method=pending.payment_method,
+    )
+
+    for d in details:
+        SaleDetail.objects.create(
+            sale=sale,
+            sr_no=d.sr_no,
+            product_name=d.p_name,
+            quantity=d.p_qty,
+            price=d.p_price,
+            amount=d.p_amount,
+        )
+
+    # Delete original pending sale
+    pending.delete()
+
+    messages.success(request, f'Transaction {sale.id} marked as paid.')
+    return redirect('pending_sales')

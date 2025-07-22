@@ -54,6 +54,11 @@ urlpatterns = [
     path('check-daily/', check_daily_transactions, name='check_daily_transactions'),
     path('delete-transaction/<int:id>/', delete_transaction, name='delete_transaction'),
 
+    # Pending Sale URLs
+    path('pending-sales/', pending_sales, name='pending_sales'),
+    path('mark-paid/<int:id>/', mark_as_paid, name='mark_as_paid'),
+
+
 
     
 
