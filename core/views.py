@@ -12,6 +12,8 @@ from django.shortcuts import render
 from .models import Category, Product, Sale
 from datetime import datetime
 from django.shortcuts import get_object_or_404
+from django.db import connection
+from django.db.models import Q
 
 # Create your views here.
 def adminHome(request):
@@ -335,4 +337,41 @@ def delete_expense(request, id):
     expense = get_object_or_404(Expense, pk=id)
     expense.delete()
     return redirect('view_expenses') 
-#
+
+# Check Transaction Details
+def check_transaction(request):
+    transactions = None
+    searched = False
+    transaction_id = request.GET.get('transaction_id')
+
+    if transaction_id:
+        searched = True
+        transactions = Sale.objects.filter(id=transaction_id)
+
+    return render(request, 'check_transaction.html', {
+        'transactions': transactions,
+        'searched': searched
+    })
+
+
+def check_all_transactions(request):
+    transactions = Sale.objects.all().order_by('-date')
+    return render(request, 'check_transaction.html', {
+        'transactions': transactions,
+        'searched': True
+    })
+
+
+def check_daily_transactions(request):
+    today = now().date()
+    transactions = Sale.objects.filter(date__date=today)
+    return render(request, 'check_transaction.html', {
+        'transactions': transactions,
+        'searched': True
+    })
+
+
+def delete_transaction(request, id):
+    transaction = get_object_or_404(Sale, id=id)
+    transaction.delete()
+    return redirect('check_transaction')

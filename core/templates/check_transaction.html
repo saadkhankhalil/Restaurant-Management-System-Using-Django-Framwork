@@ -1,0 +1,58 @@
+{% extends 'admin_base.html' %}
+{% block main %}
+
+<div class="card shadow">
+    <div class="card-body">
+        <h5 class="p-2" style="border-bottom: 2px solid orange;">Check Transaction</h5>
+
+        <form method="GET" action="{% url 'check_transaction' %}">
+            <div class="form-group">
+                <label>Transaction ID</label>
+                <input type="text" name="transaction_id" class="form-control" placeholder="Enter Transaction ID">
+            </div>
+            <button type="submit" class="btn btn-dark">Search</button>
+            <a href="{% url 'check_all_transactions' %}" class="btn btn-primary">Check All</a>
+            <a href="{% url 'check_daily_transactions' %}" class="btn btn-success">Check Daily</a>
+        </form>
+
+        <hr>
+
+        {% if transactions %}
+        <table class="table table-bordered table-striped mt-3">
+            <thead>
+                <tr>
+                    <th>Transaction ID</th>
+                    <th>Customer Name</th>
+                    <th>Phone</th>
+                    <th>Amount</th>
+                    <th>Received</th>
+                    <th>Payment Method</th>
+                    <th>Date</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tx in transactions %}
+                <tr>
+                    <td>{{ tx.id }}</td>
+                    <td>{{ tx.customer_name }}</td>
+                    <td>{{ tx.phone_no }}</td>
+                    <td>{{ tx.amount }}</td>
+                    <td>{{ tx.received }}</td>
+                    <td>{{ tx.payment_method }}</td>
+                    <td>{{ tx.date }}</td>
+                    <td>
+                        <a href="{% url 'delete_transaction' tx.id %}" onclick="return confirm('Are you sure?')"
+                            class="text-danger">Delete</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% elif searched %}
+        <div class="alert alert-warning mt-3">No transaction found with that ID.</div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

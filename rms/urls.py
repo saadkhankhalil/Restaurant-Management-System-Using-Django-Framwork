@@ -19,6 +19,7 @@ from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
 from core.views import *
+from core.views import * 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -47,6 +48,11 @@ urlpatterns = [
     path('view-expenses/', view_expenses, name='view_expenses'),
     path('edit-expense/<int:id>/', edit_expense, name='edit_expense'),
     path('delete-expense/<int:pid>/', delete_expense, name='delete_expense'),
+    # Transaction URLs
+    path('check-transaction/', check_transaction, name='check_transaction'),
+    path('check-all/', check_all_transactions, name='check_all_transactions'),
+    path('check-daily/', check_daily_transactions, name='check_daily_transactions'),
+    path('delete-transaction/<int:id>/', delete_transaction, name='delete_transaction'),
 
 
     
