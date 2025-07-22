@@ -1,0 +1,89 @@
+{% extends 'admin_base.html' %}
+{% block main %}
+
+<div class="card shadow">
+    <div class="card-body">
+        <h5 class="p-2" style="border-bottom: 2px solid orange;">All Product</h5>
+        <div class="container-fluid">
+
+            <table class="table table-bordered table-sm">
+                <thead>
+                    <tr>
+                        <th>S.No.</th>
+                        <th>Image</th>
+                        <th>Product Name</th>
+                        <th>Category</th>
+                        <th>Price</th>
+                        <th>Discount</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for i in product %}
+                    <tr>
+                        <td>{{ forloop.counter0|add:product.start_index|add:"-1" }}</td>
+                        <td><img src="{{ i.image.url }}" style="width:100px" /></td>
+                        <td>{{ i.name }}</td>
+                        <td>{{ i.category.name }}</td>
+                        <td>{{ i.price }}</td>
+                        <td>{{ i.discount }}</td>
+                        <td>
+                            <a href="/edit-product/{{ i.id }}/" class="text-success">Edit</a>
+                            <a href="/delete-product/{{ i.id }}/" class="text-danger"
+                                onclick="return confirm('Are You Sure?')">Delete</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7">No products found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <!-- Pagination controls -->
+            <nav>
+                <ul class="pagination justify-content-center">
+                    {% if product.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1">&laquo; First</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ product.previous_page_number }}">Previous</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">&laquo; First</span>
+                    </li>
+                    <li class="page-item disabled">
+                        <span class="page-link">Previous</span>
+                    </li>
+                    {% endif %}
+
+                    <li class="page-item active">
+                        <span class="page-link">{{ product.number }} / {{ product.paginator.num_pages }}</span>
+                    </li>
+
+                    {% if product.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ product.next_page_number }}">Next</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ product.paginator.num_pages }}">Last &raquo;</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">Next</span>
+                    </li>
+                    <li class="page-item disabled">
+                        <span class="page-link">Last &raquo;</span>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+
+        </div>
+    </div>
+</div>
+
+{% endblock %}

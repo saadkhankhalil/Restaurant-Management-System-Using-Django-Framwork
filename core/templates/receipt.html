@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Receipt</title>
+    <style>
+        @media print {
+            body {
+                width: 80mm;
+                /* 3.15in: Common thermal paper width */
+                margin: 0;
+                padding: 0;
+                font-size: 11px;
+                font-family: monospace;
+                line-height: 1.2;
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+
+            td,
+            th {
+                padding: 2px 0;
+                text-align: left;
+            }
+
+            .no-print {
+                display: none;
+            }
+        }
+
+        body {
+            font-family: monospace;
+            font-size: 11px;
+            width: 80mm;
+            margin: auto;
+            padding: 5px;
+            line-height: 1.2;
+        }
+
+        h2 {
+            text-align: center;
+            margin: 5px 0;
+        }
+
+        .summary,
+        table {
+            margin-top: 10px;
+        }
+
+        .summary p {
+            margin: 2px 0;
+        }
+    </style>
+</head>
+
+<body onload="window.print(); window.onafterprint = function() { window.location.href = '/pos/'; }">
+
+    <h2>Friendies Cafe</h2>
+    <p><strong>Invoice:</strong> {{ sale.id }}</p>
+    <p><strong>Customer:</strong> {{ sale.customer_name }}</p>
+    <p><strong>Phone:</strong> {{ sale.phone_no }}</p>
+    <p><strong>Date:</strong> {{ sale.date|date:"Y-m-d H:i" }}</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Rate</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in sale.details.all %}
+            <tr>
+                <td>{{ item.product_name }}</td>
+                <td>{{ item.quantity }}</td>
+                <td>{{ item.price }}</td>
+                <td>{{ item.amount }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="summary">
+        <p><strong>Total:</strong> {{ sale.amount }}</p>
+        <p><strong>Discount:</strong> {{ sale.discount }}%</p>
+        <p><strong>Service Charges:</strong> {{ sale.service_charges }}</p>
+        <p><strong>Received:</strong> {{ sale.received }}</p>
+        <p><strong>Change:</strong> {{ sale.change }}</p>
+        <p>--- Thank You ---</p>
+    </div>
+
+</body>
+
+</html>

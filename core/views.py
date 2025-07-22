@@ -1,0 +1,338 @@
+from django.shortcuts import render
+from .models import *
+from django.contrib import messages
+from django.shortcuts import redirect
+from django.utils import timezone
+from django.http import HttpResponse
+from .utils import render_to_pdf
+from django.core.paginator import Paginator
+from django.db.models import Count, Sum
+from django.utils.timezone import now, timedelta
+from django.shortcuts import render
+from .models import Category, Product, Sale
+from datetime import datetime
+from django.shortcuts import get_object_or_404
+
+# Create your views here.
+def adminHome(request):
+    return render(request, 'admin_base.html')
+
+#Add Category
+def add_category(request):
+    if request.method == "POST":
+        name = request.POST['name']
+        Category.objects.create(name=name)
+        msg = "Category added"
+    return render(request, 'add_category.html', locals())
+
+#View Category
+def view_category(request):
+    category = Category.objects.all()
+    return render(request, 'view_category.html', locals())
+
+#Update Category
+def edit_category(request, pid):
+    category = Category.objects.get(id=pid)
+    if request.method == "POST":
+        name = request.POST['name']
+        category.name = name
+        category.save()
+        messages.success(request, "Category Updated")
+        return redirect('view_category')
+    return render(request, 'edit_category.html', locals())
+#Delete Category
+def delete_category(request, pid):
+    category = Category.objects.get(id=pid)
+    category.delete()
+    messages.success(request, "Category Deleted")
+    return redirect('view_category')
+#Add Product
+def add_product(request):
+    category = Category.objects.all()
+    if request.method == "POST":
+        name = request.POST['name']
+        price = request.POST['price']
+        image = request.FILES['image']
+        cat_id = request.POST['category']
+        category = Category.objects.get(id=cat_id)
+        Product.objects.create(category=category, name=name, price=price, image=image)
+        messages.success(request, "Product added")
+        return redirect('view_product')
+    return render(request, 'add_product.html', locals())
+#View Product
+def view_product(request):
+    all_products = Product.objects.all().order_by('-id')  # Optional: newest first
+    paginator = Paginator(all_products, 5)  # Show 5 products per page
+
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    return render(request, 'view_product.html', {'product': page_obj})
+
+#Update Product
+def edit_product(request, pid):
+    product = Product.objects.get(id=pid)
+    category = Category.objects.all()
+    if request.method == "POST":
+        name = request.POST['name']
+        price = request.POST['price']
+        image = request.FILES.get('image', product.image)  # Use existing image if not updated
+        cat_id = request.POST['category']
+        category = Category.objects.get(id=cat_id)
+        product.category = category
+        product.name = name
+        product.price = price
+        product.image = image
+        product.save()
+        messages.success(request, "Product Updated")
+        return redirect('view_product')
+    return render(request, 'edit_product.html', locals())
+#Delete Product
+def delete_product(request, pid):
+    product = Product.objects.get(id=pid)
+    product.delete()
+    messages.success(request, "Product Deleted")
+    return redirect('view_product')
+#############################POS functionality can be added here later############################################
+
+def pos(request):
+    # Get or initialize session cart
+    if 'cart' not in request.session:
+        request.session['cart'] = []
+
+    session_cart = request.session['cart']
+    cart = []
+
+    # Populate cart from session
+    for item in session_cart:
+        try:
+            product = Product.objects.get(id=item['product_id'])
+            cart.append({
+                'product': product,
+                'qty': item['qty'],
+                'total': product.price * item['qty']
+            })
+        except Product.DoesNotExist:
+            continue
+
+    # Filter products
+    category_id = request.GET.get('category')
+    if category_id:
+        products = Product.objects.filter(category_id=category_id)
+    else:
+        products = Product.objects.all()
+
+    categories = Category.objects.all()
+
+    if request.method == 'POST':
+        product_id = request.POST.get('add_to_cart')
+        if product_id:
+            product = Product.objects.get(id=product_id)
+            found = False
+            for item in session_cart:
+                if item['product_id'] == int(product_id):
+                    item['qty'] += 1
+                    found = True
+                    break
+            if not found:
+                session_cart.append({'product_id': int(product_id), 'qty': 1})
+            request.session['cart'] = session_cart
+            return redirect('pos')
+
+    # Total price calculation
+    total_price = sum(item['total'] for item in cart)
+
+    return render(request, 'pos.html', {
+        'categories': categories,
+        'products': products,
+        'cart': cart,
+        'total_price': total_price,
+    })
+
+def clear_cart(request):
+    request.session['cart'] = []
+    return redirect('pos')
+
+
+
+
+
+import json  # Replace eval for safety
+
+from decimal import Decimal  # Add this import at the top
+
+def checkout_view(request):
+    session_cart = request.session.get('cart', [])
+    cart_total = Decimal("0.00")
+
+    for item in session_cart:
+        try:
+            product = Product.objects.get(id=item["product_id"])
+            cart_total += product.price * Decimal(item["qty"])
+        except Product.DoesNotExist:
+            continue
+
+    if request.method == "POST":
+        name = request.POST.get("customer_name", "Anonymous")
+        phone = request.POST.get("phone_no", "")
+        discount = Decimal(request.POST.get("discount") or 0)
+        service_charges = Decimal(request.POST.get("service_charges") or 0)
+        received = Decimal(request.POST.get("received") or 0)
+        payment_method = request.POST.get("payment_method", "Cash")
+
+        items = []
+        amount = Decimal("0.00")
+
+        for item in session_cart:
+            try:
+                product = Product.objects.get(id=item["product_id"])
+                quantity = item["qty"]
+                price = product.price
+                total = price * Decimal(quantity)
+                items.append({
+                    "product_name": product.name,
+                    "quantity": quantity,
+                    "price": price,
+                    "amount": total,
+                })
+                amount += total
+            except Product.DoesNotExist:
+                continue
+
+        discounted_amount = amount - (amount * discount / Decimal("100"))
+        final_amount = discounted_amount + service_charges
+        change = received - final_amount
+
+        sale = Sale.objects.create(
+            customer_name=name,
+            phone_no=phone,
+            amount=final_amount,
+            received=received,
+            change=change,
+            discount=discount,
+            service_charges=service_charges,
+            payment_method=payment_method,
+        )
+
+        for idx, item in enumerate(items, start=1):
+            SaleDetail.objects.create(
+                sale=sale,
+                sr_no=idx,
+                product_name=item["product_name"],
+                quantity=item["quantity"],
+                price=item["price"],
+                amount=item["amount"],
+            )
+
+        request.session['cart'] = []
+
+        pdf = render_to_pdf("receipt.html", {"sale": sale})
+        if pdf:
+            response = HttpResponse(pdf, content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="receipt_{sale.id}.pdf"'
+            return response
+
+        return HttpResponse("PDF generation failed")
+
+    # GET request (initial load)
+    return render(request, "checkout.html", {
+        "cart_total": cart_total
+    })
+
+def show_receipt(request, sale_id):
+    from .models import Sale
+    try:
+        sale = Sale.objects.get(pk=sale_id)
+        return render(request, "receipt.html", {"sale": sale})
+    except Sale.DoesNotExist:
+        return HttpResponse("Receipt not found")
+    
+#Dashboard
+def dashboard_view(request):
+    today = now().date()
+    start_of_week = today - timedelta(days=today.weekday())  # Monday
+    start_of_month = today.replace(day=1)
+
+    # Optional filters from GET parameters
+    filter_by = request.GET.get("filter", "daily")  # daily, weekly, monthly
+
+    if filter_by == "daily":
+        sales = Sale.objects.filter(date__date=today)
+        period_label = "Today"
+    elif filter_by == "weekly":
+        sales = Sale.objects.filter(date__date__gte=start_of_week)
+        period_label = "This Week"
+    elif filter_by == "monthly":
+        sales = Sale.objects.filter(date__date__gte=start_of_month)
+        period_label = "This Month"
+    else:
+        sales = Sale.objects.all()
+        period_label = "All Time"
+
+    # Aggregated values
+    total_categories = Category.objects.count()
+    total_products = Product.objects.count()
+    total_sales_count = sales.count()
+    total_sales_amount = sales.aggregate(total=Sum('amount'))['total'] or 0
+
+    context = {
+        'total_categories': total_categories,
+        'total_products': total_products,
+        'total_sales_count': total_sales_count,
+        'total_sales_amount': total_sales_amount,
+        'period_label': period_label,
+        'selected_filter': filter_by,
+    }
+
+    return render(request, 'dashboard.html', context)
+
+#Add Expense
+def add_expense(request):
+    msg = ""
+    if request.method == "POST":
+        title = request.POST.get('title')
+        amount = request.POST.get('amount')
+        expense_date = request.POST.get('expense_date')
+
+        if title and amount and expense_date:
+            Expense.objects.create(
+                title=title,
+                amount=amount,
+                expense_date=expense_date
+            )
+            msg = "Expense added successfully."
+        else:
+            msg = "Please fill all required fields."
+
+    return render(request, 'expense.html', locals())
+#view Expense
+def view_expenses(request):
+    expenses = Expense.objects.all().order_by('-expense_date')
+    return render(request, 'view_expense.html', locals())
+#Edit Delete Expense
+def edit_expense(request, id):
+    expense = get_object_or_404(Expense, pk=id)
+    msg = ""
+
+    if request.method == "POST":
+        title = request.POST.get('title')
+        amount = request.POST.get('amount')
+        expense_date = request.POST.get('expense_date')
+
+        if title and amount and expense_date:
+            expense.title = title
+            expense.amount = amount
+            expense.expense_date = expense_date
+            expense.save()
+            msg = "Expense updated successfully."
+        else:
+            msg = "All fields are required."
+
+    return render(request, 'edit_expense.html', locals())
+#Delete Expense
+
+def delete_expense(request, id):
+    expense = get_object_or_404(Expense, pk=id)
+    expense.delete()
+    return redirect('view_expenses') 
+#
